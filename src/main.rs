@@ -1,9 +1,9 @@
 // http://fredrik.anderzon.se/2016/05/10/rust-for-node-developers-part-1-introduction/
-extern crate rustc_serialize;
+// extern crate rustc_serialize;
 extern crate rusqlite;
 
 use std::io;
-use rustc_serialize::json;
+// use rustc_serialize::json;
 use rusqlite::Connection;
 
 const DB_PATH: &'static str = "todos.db";
@@ -17,7 +17,7 @@ struct Todo {
 }
 
 fn db_setup(db: &Connection) {
-  let del = "DROP TABLE todos";
+  // let del = "DROP TABLE todos";
   let setup = "CREATE TABLE IF NOT EXISTS todos (
     id INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
@@ -25,32 +25,45 @@ fn db_setup(db: &Connection) {
     deleted INTEGER
   )";
 
-  let insert = "INSERT INTO todos (title, completed, deleted) VALUES('Create todos', 0, 0)";
-  let insert2 = "INSERT INTO todos (title, completed, deleted) VALUES('Create table', 1, 0)";
+  // let insert = "INSERT INTO todos (title, completed, deleted) VALUES('Create todos', 0, 0)";
+  // let insert2 = "INSERT INTO todos (title, completed, deleted) VALUES('Create table', 1, 0)";
 
-  db.execute(del, &[]).unwrap();
+  // db.execute(del, &[]).unwrap();
   db.execute(setup, &[]).unwrap();
-  db.execute(insert, &[]).unwrap();
-  db.execute(insert2, &[]).unwrap();
+  // db.execute(insert, &[]).unwrap();
+  // db.execute(insert2, &[]).unwrap();
 }
 
-fn add_todo(todos: &mut Vec<Todo>, title: &str) {
+fn add_todo(todos: &mut Vec<Todo>, title: &str, db: &Connection) {
   let new_id = todos.len() as i32 + 1;
-  todos.push(Todo {
+
+  let todo = Todo {
     id: new_id,
     title: title.to_string(),
     completed: false,
     deleted: false
-  });
+  };
+
+  db.execute("INSERT INTO todos VALUES ($1, $2, $3, $4)",
+    &[&todo.id, &todo.title, &todo.completed, &todo.deleted])
+    .expect("Failed to insert values into database");
+
+  todos.push(todo);
 }
 
-fn remove_todo(todos: &mut Vec<Todo>, todo_id: i32) {
+fn remove_todo(todos: &mut Vec<Todo>, todo_id: i32, db: &Connection) {
+  db.execute("UPDATE todos SET deleted = 1 WHERE id = $1", &[&todo_id])
+    .expect("Failed to remove from database");
+
   if let Some(todo) = todos.iter_mut().find(|todo| todo.id == todo_id) {
     todo.deleted = true;
   }
 }
 
-fn complete_todo(todos: &mut Vec<Todo>, todo_id: i32) {
+fn complete_todo(todos: &mut Vec<Todo>, todo_id: i32, db: &Connection) {
+  db.execute("UPDATE todos set completed = 1 WHERE id = $1", &[&todo_id])
+    .expect("Failed to update item in database");
+
   if let Some(todo) = todos.iter_mut().find(|todo| todo.id == todo_id) {
     todo.completed = true;
   }
@@ -76,7 +89,7 @@ fn main() {
   db_setup(&db);
 
   let mut read_todos = db.prepare("SELECT id, title, completed, deleted FROM todos").unwrap();
-  let mut todos_iter = read_todos.query_map(&[], |row| {
+  let todos_iter = read_todos.query_map(&[], |row| {
     Todo {
       id: row.get(0),
       title: row.get(1),
@@ -110,13 +123,13 @@ fn main() {
       // len > 1 - add x y z etc
       _ => {
         match command_parts[0] {
-          "add" => add_todo(&mut todos, &command_parts[1..].join(" ")),
+          "add" => add_todo(&mut todos, &command_parts[1..].join(" "), &db),
           // remove :todo_id
           "remove" => if let Ok(num) = command_parts[1].parse::<i32>() {
-            remove_todo(&mut todos, num)
+            remove_todo(&mut todos, num, &db)
           },
           "done" => if let Ok(num) = command_parts[1].parse::<i32>() {
-            complete_todo(&mut todos, num)
+            complete_todo(&mut todos, num, &db)
           },
           _ => invalid_command(&command)
         }
